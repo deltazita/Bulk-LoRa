@@ -1,0 +1,26 @@
+# Bulk-LoRa
+###################################################################################
+#          Event-based simulator for LoRa-based Bulk data transmissions           #
+#                                                                                 #
+# Description: The script considers a scenario where each node transmits as soon  #
+# as it has a considerable amount of data. All nodes repsect the 1% radio         #
+# duty-cycle restriction. The lowest possible SF is assigned to each node based   #
+# on its distance to the gateway and the propagation model. The script takes as   #
+# input the node positions as it is defined in the read_data sub. It outputs the  #
+# data collection time and the average node energy consumption.                   #
+#                                                                                 #
+# Assumptions:                                                                    #
+# -- All the transmissions are performed over the same channel                    #
+# -- Acknowledgments are sent over a different channel                            #
+# -- Collisions occur when two packets overlap in SF, time, and power             #
+#    (capture effect)                                                             #
+# -- All the nodes have the same BW/CR settings                                   #
+#                                                                                 #
+# author: Dr. Dimitrios Zorbas                                                    #
+# email: dimzorbas@ieee.org                                                       #
+# distributed under GNUv2 General Public Licence                                  #
+###################################################################################
+
+files included: 
+-- generate_terrain.pl for 2D terrain generation
+-- Bulk-LoRa.pl simulator
