@@ -2,7 +2,7 @@
 
 ###################################################################################
 #          Event-based simulator for LoRa-based Bulk data transmissions           #
-#                                  v.2018.11.28                                   #
+#                                  v.2018.12.03                                   #
 #                                                                                 #
 # Description: The script considers a scenario where each node transmits as soon  #
 # as it has a considerable amount of data. All nodes repsect the 1% radio         #
@@ -36,8 +36,10 @@ my %rem_data = (); # remaining data
 my %consumption = (); # consumption
 my %SF = (); # Spreading Factor
 my %transmissions = (); # current transmission
+my %retransmisssions = (); # retransmisssions per node
 
 # simulation and propagation parameters
+my $max_retr = 0; # max number of retransmisssions per packet
 my @sflist = ([7,-124,-122,-116], [8,-127,-125,-119], [9,-130,-128,-122], [10,-133,-130,-125], [11,-135,-132,-128], [12,-137,-135,-129]); # sensitivities per SF/BW
 my $bw = 500; # bandwidth
 my $var = 3.57; # variance
@@ -52,6 +54,8 @@ my $v = 2; # max variance between two successive transmissions after duty cycle 
 my ($gw_x, $gw_y, $gw_z) = (0, 0, 0); # to be filled in read_data()
 my ($terrain, $norm_x, $norm_y) = (0, 0, 0); # terrain side
 my $start_time = time; # just for statistics
+my $dropped = 0; # number of dropped packets
+my $total_trans = 0; # expected number of transm. packets
 
 read_data(); # read terrain file
 
@@ -61,6 +65,8 @@ foreach my $n (keys %ncoords){
 	$SF{$n} = min_sf($n, $d0);
 	print "# $n got SF$SF{$n}\n";
 	$rem_data{$n} = $data;
+	$retransmisssions{$n} = 0;
+	$total_trans += ceil($data/$pl[$SF{$n}-7]);
 }
 
 my @examined = ();
@@ -90,6 +96,7 @@ while (scalar @examined < scalar keys %SF){
 			$sel = $n;
 		}
 	}
+	last if (!defined $sel);
 	print "# grabbed $sel, transmission at $sel_sta -> $sel_end\n";
 	$collection_time = $sel_end if ($sel_end > $collection_time);
 		
@@ -130,14 +137,25 @@ while (scalar @examined < scalar keys %SF){
 	foreach my $del (@coll){
 		my ($del_sta, $del_end) = @{$transmissions{$del}};
 		delete $transmissions{$del};
-		my $at = airtime($SF{$del});
-		$del_sta += 100*$at + int(rand($v)*1000000)/1000000;
-		$transmissions{$del} = [$del_sta, $del_sta+$at];
-		$consumption{$del} += $at * $Ptx_w;
+		if ($retransmisssions{$del} < $max_retr){
+			$retransmisssions{$del} += 1;
+		}else{
+			$dropped += 1;
+			$rem_data{$del} -= $pl[$SF{$del}-7];
+			$retransmisssions{$del} = 0;
+			print "# $del 's packet lost!\n";
+		}
+		if ($rem_data{$del} > 0){
+			my $at = airtime($SF{$del});
+			$del_sta += 100*$at + int(rand($v)*1000000)/1000000;
+			$transmissions{$del} = [$del_sta, $del_sta+$at];
+			$consumption{$del} += $at * $Ptx_w;
+		}
 	}
 	if ($collided == 0){
 		# remove this transmission
 		delete $transmissions{$sel};
+		$retransmisssions{$sel} = 0;
 		# reduce data and assign a new transmission
 		$rem_data{$sel} -= $pl[$SF{$sel}-7];
 		if ($rem_data{$sel} <= 0){
@@ -161,7 +179,8 @@ foreach my $n (keys %SF){
 my $finish_time = time;
 print "Data collection time = $collection_time sec\n";
 printf "Avg node consumption = %.5f J\n", $avg_cons/(scalar keys %SF);
-printf "Execution time = %.4f secs\n", $finish_time - $start_time;
+printf "Packet Delivery Ratio = %.5f\n", ($total_trans - $dropped)/$total_trans;
+printf "Script execution time = %.4f secs\n", $finish_time - $start_time;
 
 sub min_sf{
 	my ($n, $d0) = @_;
