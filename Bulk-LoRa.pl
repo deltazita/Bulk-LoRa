@@ -2,20 +2,21 @@
 
 ###################################################################################
 #          Event-based simulator for LoRa-based Bulk data transmissions           #
-#                                  v.2018.12.03                                   #
+#                                  v.2018.12.19                                   #
 #                                                                                 #
 # Description: The script considers a scenario where each node transmits as soon  #
-# as it has a considerable amount of data. All nodes repsect the 1% radio         #
+# as it has a considerable amount of data. All nodes respect the 1% radio         #
 # duty-cycle restriction. The lowest possible SF is assigned to each node based   #
 # on its distance to the gateway and the propagation model. The script takes as   #
 # input the node positions as it is defined in the read_data sub. It outputs the  #
 # data collection time and the average node energy consumption.                   #
 #                                                                                 #
-# Assumptions:                                                                    #
+# Assumptions/Features:                                                           #
 # -- All the transmissions are performed over the same channel                    #
-# -- Acknowledgments are sent over a different channel                            #
+# -- No acknowledgments are sent                                                  #
 # -- Collisions occur when two packets overlap in SF, time, and power             #
 #    (capture effect)                                                             #
+# -- Non-orthogonal transmissions are taken into account                          #
 # -- All the nodes have the same BW/CR settings                                   #
 #                                                                                 #
 # author: Dr. Dimitrios Zorbas                                                    #
@@ -27,6 +28,7 @@ use strict;
 use POSIX;
 use List::Util qw[min max];
 use Time::HiRes qw( time );
+use Math::Random;
 
 die "usage: ./LoRaWAN.pl terrain_file!\n" unless (@ARGV == 1);
 
@@ -46,10 +48,9 @@ my $var = 3.57; # variance
 my $G = 0.5; # rand(1);
 my ($dref, $Ptx, $Lpld0, $Xs, $gamma) = (40, 7, 95, $var*$G, 2.08); # attenuation model parameters
 my $Ptx_w = 25 * 3.5 / 1000; # 25mA, 3.5V
-my @thresholds = ([1,-8,-9,-9,-9,-9], [-11,1,-11,-12,-13,-13], [-15,-13,1,-13,-14,-15], [-19,-18,-17,1,-17,-18], [-22,-22,-21,-20,1,-20], [-25,-25,-25,-24,-23,1]); # capture effect power thresholds per SF[SF] for non-orthogonal transmissions
+my @thresholds = ([6,-16,-18,-19,-19,-20], [-24,6,-20,-22,-22,-22], [-27,-27,6,-23,-25,-25], [-30,-30,-30,6,-26,-28], [-33,-33,-33,-33,6,-29], [-36,-36,-36,-36,-36,6]); # capture effect power thresholds per SF[SF] for non-orthogonal transmissions
 
 my @pl = (100, 100, 100, 100, 100, 100); # payload size per SF (bytes)
-my $data = 1024; # total data to be transmitted (bytes)
 my $v = 2; # max variance between two successive transmissions after duty cycle (secs)
 my ($gw_x, $gw_y, $gw_z) = (0, 0, 0); # to be filled in read_data()
 my ($terrain, $norm_x, $norm_y) = (0, 0, 0); # terrain side
@@ -64,6 +65,7 @@ foreach my $n (keys %ncoords){
 	my $d0 = distance3d($gw_x, $ncoords{$n}[0], $gw_y, $ncoords{$n}[1], $gw_z, 0);
 	$SF{$n} = min_sf($n, $d0);
 	print "# $n got SF$SF{$n}\n";
+	my $data = 500 + int(rand(1000)); # specify here the amount of data of each node
 	$rem_data{$n} = $data;
 	$retransmisssions{$n} = 0;
 	$total_trans += ceil($data/$pl[$SF{$n}-7]);
@@ -118,9 +120,9 @@ while (scalar @examined < scalar keys %SF){
 			$overlap += 2;
 		}
 		# power 
-		if (($overlap == 1) || ($overlap == 3)){
-			my $d_ = distance3d($gw_x, $ncoords{$n}[0], $gw_y, $ncoords{$n}[1], $gw_z, 0);
-			my $prx_ = $Ptx - ($Lpld0 + 10*$gamma * log($d_/$dref) + $Xs);
+		my $d_ = distance3d($gw_x, $ncoords{$n}[0], $gw_y, $ncoords{$n}[1], $gw_z, 0);
+		my $prx_ = $Ptx - ($Lpld0 + 10*$gamma * log($d_/$dref) + $Xs);
+		if ($overlap == 3){
 			if (abs($prx - $prx_) < $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # both collide
 				$collided += 1;
 				push (@coll, $sel) if ($collided == 1);
@@ -130,6 +132,24 @@ while (scalar @examined < scalar keys %SF){
 				$collided += 1;
 				push (@coll, $sel) if ($collided == 1);
 				print "# $sel surpressed by $n\n";
+			}
+		}elsif ($overlap == 1){
+			if (($prx - $prx_) > $thresholds[$SF{$sel}-7][$SF{$n}-7]){
+				if (($prx_ - $prx) <= $thresholds[$SF{$n}-7][$SF{$sel}-7]){
+					$collided += 1;
+					push (@coll, $n);
+					print "# $n surpressed by $sel\n";
+				}
+			}else{
+				if (($prx_ - $prx) > $thresholds[$SF{$n}-7][$SF{$sel}-7]){
+					$collided += 1;
+					push (@coll, $sel) if ($collided == 1);
+					print "# $sel surpressed by $n\n";
+				}else{
+					push (@coll, $sel) if ($collided == 1);
+					push (@coll, $n);
+					print "# $sel collided together with $n\n";
+				}
 			}
 		}
 	}
@@ -146,7 +166,9 @@ while (scalar @examined < scalar keys %SF){
 			print "# $del 's packet lost!\n";
 		}
 		if ($rem_data{$del} > 0){
-			my $at = airtime($SF{$del});
+			my $payl = $pl[$SF{$del}-7];
+			$payl = $rem_data{$del} if ($rem_data{$del} < $payl);
+			my $at = airtime($SF{$del}, $payl);
 			$del_sta += 100*$at + int(rand($v)*1000000)/1000000;
 			$transmissions{$del} = [$del_sta, $del_sta+$at];
 			$consumption{$del} += $at * $Ptx_w;
@@ -161,7 +183,9 @@ while (scalar @examined < scalar keys %SF){
 		if ($rem_data{$sel} <= 0){
 			push (@examined, $sel);
 		}else{
-			my $at = airtime($SF{$sel});
+			my $payl = $pl[$SF{$sel}-7];
+			$payl = $rem_data{$sel} if ($rem_data{$sel} < $payl);
+			my $at = airtime($SF{$sel}, $payl);
 			$sel_sta += 100*$at + int(rand($v)*1000000)/1000000;
 			$transmissions{$sel} = [$sel_sta, $sel_sta+$at];
 			$consumption{$sel} += $at * $Ptx_w;
@@ -207,7 +231,8 @@ sub airtime{
 	my $H = 0;       # implicit header disabled (H=0) or not (H=1)
 	my $DE = 0;      # low data rate optimization enabled (=1) or not (=0)
 	my $Npream = 8;  # number of preamble symbol (12.25  from Utz paper)
-	my $payload = $pl[$sf-7];
+	my $payload = shift;
+	$payload = $pl[$sf-7] if (!defined $payload);
 	
 	if (($bw == 125) && (($sf == 11) || ($sf == 12))){
 		# low data rate optimization mandated for BW125 with SF11 and SF12
