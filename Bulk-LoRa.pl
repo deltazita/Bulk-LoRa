@@ -104,7 +104,7 @@ while (scalar @examined < scalar keys %SF){
 		
 	# check for collisions with other transmissions (time, SF, power)
 	my $d = distance3d($gw_x, $ncoords{$sel}[0], $gw_y, $ncoords{$sel}[1], $gw_z, 0);
-	my $prx = $Ptx - ($Lpld0 + 10*$gamma * log($d/$dref) + $Xs);
+	my $prx = $Ptx - ($Lpld0 + 10*$gamma * log10($d/$dref) + $Xs);
 	my $collided = 0;
 	my @coll = ();
 	foreach my $n (keys %transmissions){
@@ -121,7 +121,7 @@ while (scalar @examined < scalar keys %SF){
 		}
 		# power 
 		my $d_ = distance3d($gw_x, $ncoords{$n}[0], $gw_y, $ncoords{$n}[1], $gw_z, 0);
-		my $prx_ = $Ptx - ($Lpld0 + 10*$gamma * log($d_/$dref) + $Xs);
+		my $prx_ = $Ptx - ($Lpld0 + 10*$gamma * log10($d_/$dref) + $Xs);
 		if ($overlap == 3){
 			if (abs($prx - $prx_) < $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # both collide
 				$collided += 1;
