@@ -123,12 +123,12 @@ while (scalar @examined < scalar keys %SF){
 		my $d_ = distance3d($gw_x, $ncoords{$n}[0], $gw_y, $ncoords{$n}[1], $gw_z, 0);
 		my $prx_ = $Ptx - ($Lpld0 + 10*$gamma * log10($d_/$dref) + $Xs);
 		if ($overlap == 3){
-			if (abs($prx - $prx_) < $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # both collide
+			if (abs($prx - $prx_) <= $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # both collide
 				$collided += 1;
 				push (@coll, $sel) if ($collided == 1);
 				push (@coll, $n);
 				print "# $sel collided together with $n\n";
-			}elsif (($prx - $prx_) < $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # n suppressed sel
+			}elsif (($prx - $prx_) > $thresholds[$SF{$sel}-7][$SF{$n}-7]){ # n suppressed sel
 				$collided += 1;
 				push (@coll, $sel) if ($collided == 1);
 				print "# $sel surpressed by $n\n";
